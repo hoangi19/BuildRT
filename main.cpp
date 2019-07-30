@@ -92,12 +92,14 @@ int add2RTFile(OFString ROIName, Sint16 ROINumber,bool checkIsExist ,OFString UI
     return 1;
 }
 
-int writeToDataset(OFString ROIName, OFString fileName, std::vector<std::vector<cv::Point>> contourData){
-    OFString path = "../imageDCM/" + fileName;
+int writeToDataset(OFString ROIName, OFString fileName, OFString patientName, std::vector<std::vector<cv::Point>> contourData){
+    OFString path = "../imageDCM/"  + patientName + "/" + fileName;
 
     DcmFileFormat fileformat;
     if (fileformat.loadFile(path).bad()){
-        std::cout << "can't load image : " << path << "\n";
+        if (fileformat.loadFile(path+".DCM").bad())
+            if (fileformat.loadFile(path+".dcm").bad())
+                std::cout << "can't load image : " << path << " or .DCM or .dcm\n";
     }
 
     Float64 xOrigin, yOrigin, zOrigin, xSpacing, ySpacing;
@@ -156,25 +158,25 @@ cv::Mat loadBenColor(std::string path, int sigmaX = 10){
     return result;
 }
 */
-int loadContour(){
+int loadContour(OFString patientName, struct dirent *dpatient){
     
     struct dirent *de;  // Pointer for directory entry 
     OFString path = "../Data/";
     // opendir() returns a pointer of DIR type.  
-    DIR *dr = opendir(path.c_str()); 
+    // DIR *dr = opendir(path.c_str()); 
     
-    if (dr == NULL)  // opendir returns NULL if couldn't open directory 
-    { 
-        printf("Could not open current directory" ); 
-        return 0; 
-    } 
-    struct dirent *dpatient;
-    // Refer http://pubs.opengroup.org/onlinepubs/7990989775/xsh/readdir.html 
-    // for readdir() 
+    // if (dr == NULL)  // opendir returns NULL if couldn't open directory 
+    // { 
+    //     printf("Could not open current directory" ); 
+    //     return 0; 
+    // } 
+    // struct dirent *dpatient;
+    // // Refer http://pubs.opengroup.org/onlinepubs/7990989775/xsh/readdir.html 
+    // // for readdir() 
 
-    while((dpatient = readdir(dr)) != NULL){
-        OFString patientName = dpatient->d_name;
-        if (patientName == "." || patientName == "..") continue; // if not folder patient
+    // while((dpatient = readdir(dr)) != NULL){
+    //     OFString patientName = dpatient->d_name;
+    //     if (patientName == "." || patientName == "..") continue; // if not folder patient
         DIR *dpm = opendir((path  + patientName + "/masks/").c_str());
         while ((de = readdir(dpm)) != NULL){
             OFString ROIName = de->d_name;
@@ -208,13 +210,13 @@ int loadContour(){
                 fileName.erase(fileName.size()-4, 4);
                 // std::cout << fileName << "\n";
                 
-                writeToDataset(ROIName, fileName, contourData);
+                writeToDataset(ROIName, fileName, patientName, contourData);
 
                 
             }
         }
-    }
-    closedir(dr);
+    // }
+    // closedir(dr);
     return 1;
 }
 
@@ -231,31 +233,33 @@ void gen_random(std::string &s, const int len) {
     s[len] = 0;
 }
 
-bool initRTFile(){
+bool initRTFile(OFString patientName){
     DcmDataset *dataset = rtFileFormat.getDataset();
     DIR *dr;
-    dr = opendir("../imageDCM");
+    dr = opendir(("../imageDCM/" + patientName).c_str());
     OFString filename;
     struct dirent *de;
     std::string s = "............................................";
     OFString val;
-    
+    DcmFileFormat fileinfofm;
     while ((de = readdir(dr)) != NULL)
     {
         /* code */
         filename = de->d_name;
-        if (filename != "." && filename != "..") break;
+        if (filename == "." && filename == "..") continue;
+        OFCondition cond = fileinfofm.loadFile("../imageDCM/" + patientName + "/" + filename);
+        if (cond.bad()) continue;
     }
     
-    DcmFileFormat fileinfofm;
-    OFCondition cond = fileinfofm.loadFile("../imageDCM/" + filename);
+    
+    // OFCondition cond = fileinfofm.loadFile("../imageDCM/" + filename);
     DcmDataset *fileinfo = fileinfofm.getDataset();
     // std::cout << "../imageDCM/" + filename << "\n";
     
-    if (cond.bad()){
-        std::cerr << "../imageDCM/" + filename << "\n";
-        return false;
-    }
+    // if (cond.bad()){
+    //     std::cerr << "../imageDCM/" + filename << "\n";
+    //     return false;
+    // }
     //Patient
     dataset->insertEmptyElement(DCM_PatientName);
     dataset->insertEmptyElement(DCM_PatientID);
@@ -320,19 +324,37 @@ bool initRTFile(){
 
 int main(int argc, char const *argv[])
 {
-    if (!initRTFile()){
-        std::cout << "init error!!\n";
-        return 0; 
-    }
-    loadContour();
+    OFString path = "../Data/";
+    // opendir() returns a pointer of DIR type.  
+    DIR *dr = opendir(path.c_str()); 
     
-    OFCondition cond = rtFileFormat.saveFile("../RT.dcm", EXS_LittleEndianImplicit);
-    // std::cout << cond.text() << "\n";
-    // // to json
-    // std::ofstream out;
-    // out.open("../RT.json");
-    // rtFileFormat.writeJson(out, DcmJsonFormatPretty(true));
-    // out.close();
-    std::cout << "done!";
+    if (dr == NULL)  // opendir returns NULL if couldn't open directory 
+    { 
+        printf("Could not open current directory" ); 
+        return 0; 
+    } 
+    struct dirent *dpatient;
+    // Refer http://pubs.opengroup.org/onlinepubs/7990989775/xsh/readdir.html 
+    // for readdir() 
+
+    while((dpatient = readdir(dr)) != NULL){
+        OFString patientName = dpatient->d_name;
+        if (patientName == "." || patientName == ".." || patientName == "README.md") continue; // if not folder patient
+        rtFileFormat =  DcmFileFormat();
+        if (!initRTFile(patientName)){
+            std::cout << "init error!!\n";
+            return 0; 
+        }
+        loadContour(patientName, dpatient);
+        OFString out = "../res/RT_" + patientName + ".dcm";
+        OFCondition cond = rtFileFormat.saveFile(out.c_str(), EXS_LittleEndianImplicit);
+        // std::cout << cond.text() << "\n";
+        // // to json
+        // std::ofstream out;
+        // out.open("../RT.json");
+        // rtFileFormat.writeJson(out, DcmJsonFormatPretty(true));
+        // out.close();
+        std::cout << "write " + out + " done!\n";
+    }
     return 0;
 }
